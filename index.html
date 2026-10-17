@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Ortak Çizim & Pano</title>
+
+  <meta name="theme-color" content="#1e293b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Panomuz">
+  <link rel="manifest" href='data:application/manifest+json,{"name":"Ortak Panomuz","short_name":"Panomuz","start_url":".","display":"standalone","background_color":"#f8fafc","theme_color":"#1e293b"}'>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      touch-action: none;
+    }
+    .ust-bar {
+      background: #1e293b;
+      color: white;
+      padding: 12px 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+      z-index: 10;
+    }
+    .araclar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    input[type="color"] {
+      border: none;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      cursor: pointer;
+      background: none;
+    }
+    select {
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      background: #334155;
+      color: white;
+    }
+    button {
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button:active { transform: scale(0.96); }
+    #tahta {
+      flex: 1;
+      background: #ffffff;
+      cursor: crosshair;
+      touch-action: none;
+    }
+    .durum {
+      font-size: 12px;
+      color: #facc15;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="ust-bar">
+    <div>
+      <div style="font-weight: bold; font-size: 16px;">Ortak Panomuz 🎨</div>
+      <div class="durum" id="baglantiDurumu">● Bağlanıyor...</div>
+    </div>
+    <div class="araclar">
+      <input type="color" id="renkSecici" value="#2563eb">
+      <select id="kalinlikSecici">
+        <option value="3">İnce</option>
+        <option value="6" selected>Orta</option>
+        <option value="14">Kalın</option>
+      </select>
+      <button onclick="ekraniTemizle(true)">Temizle</button>
+    </div>
+  </div>
+
+  <canvas id="tahta"></canvas>
+
+  <script>
+    const SUPABASE_URL = 'https://ijznxmcoezckgnannjgk.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_wphEgK7mxVLcVHtfG956qg_ofN4Nf1G';
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const canvas = document.getElementById('tahta');
+    const ctx = canvas.getContext('2d');
+    const renkSecici = document.getElementById('renkSecici');
+    const kalinlikSecici = document.getElementById('kalinlikSecici');
+    const durumText = document.getElementById('baglantiDurumu');
+
+    let ciziyorMu = false;
+    let oncekiX = 0;
+    let oncekiY = 0;
+
+    function boyutlandir() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight - document.querySelector('.ust-bar').offsetHeight;
+    }
+    window.addEventListener('resize', boyutlandir);
+    boyutlandir();
+
+    const kanal = supabaseClient.channel('cizim-odasi', {
+      config: { broadcast: { self: false } }
+    });
+
+    kanal
+      .on('broadcast', { event: 'cizgi' }, ({ payload }) => {
+        const x0 = payload.x0 * canvas.width;
+        const y0 = payload.y0 * canvas.height;
+        const x1 = payload.x1 * canvas.width;
+        const y1 = payload.y1 * canvas.height;
+        cizgiCiz(x0, y0, x1, y1, payload.renk, payload.kalinlik, false);
+      })
+      .on('broadcast', { event: 'temizle' }, () => {
+        ekraniTemizle(false);
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          durumText.innerText = '● Canlı Bağlantı Aktif';
+          durumText.style.color = '#4ade80';
+        }
+      });
+
+    function cizgiCiz(x0, y0, x1, y1, renk, kalinlik, yayinla) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.strokeStyle = renk;
+      ctx.lineWidth = kalinlik;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.closePath();
+
+      if (yayinla) {
+        kanal.send({
+          type: 'broadcast',
+          event: 'cizgi',
+          payload: {
+            x0: x0 / canvas.width,
+            y0: y0 / canvas.height,
+            x1: x1 / canvas.width,
+            y1: y1 / canvas.height,
+            renk: renk,
+            kalinlik: kalinlik
+          }
+        });
+      }
+    }
+
+    function pozisyonAl(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
+    }
+
+    function basla(e) {
+      e.preventDefault();
+      ciziyorMu = true;
+      const pos = pozisyonAl(e);
+      oncekiX = pos.x;
+      oncekiY = pos.y;
+    }
+
+    function hareket(e) {
+      if (!ciziyorMu) return;
+      e.preventDefault();
+      const pos = pozisyonAl(e);
+      cizgiCiz(oncekiX, oncekiY, pos.x, pos.y, renkSecici.value, kalinlikSecici.value, true);
+      oncekiX = pos.x;
+      oncekiY = pos.y;
+    }
+
+    function bitir() {
+      ciziyorMu = false;
+    }
+
+    canvas.addEventListener('touchstart', basla, { passive: false });
+    canvas.addEventListener('touchmove', hareket, { passive: false });
+    canvas.addEventListener('touchend', bitir);
+
+    canvas.addEventListener('mousedown', basla);
+    canvas.addEventListener('mousemove', hareket);
+    canvas.addEventListener('mouseup', bitir);
+
+    function ekraniTemizle(yayinla) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (yayinla) {
+        kanal.send({ type: 'broadcast', event: 'temizle' });
+      }
+    }
+  </script>
+</body>
+</html>
