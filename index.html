@@ -6,25 +6,34 @@
   <title>Ortak Çizim & Pano</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-    body, html { width: 100%; height: 100%; overflow: hidden; background: #f8fafc; font-family: sans-serif; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #f8fafc;
+      font-family: system-ui, -apple-system, sans-serif;
+      touch-action: none;
+      -webkit-touch-callout: none;
+      user-select: none;
+    }
     
     #toolbar {
       position: fixed;
-      top: 10px;
+      top: 12px;
       left: 50%;
       transform: translateX(-50%);
-      background: white;
-      padding: 8px 14px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(8px);
+      padding: 6px 12px;
       border-radius: 30px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.12);
       display: flex;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
-      z-index: 100;
-      flex-wrap: wrap;
-      justify-content: center;
-      max-width: 95vw;
+      z-index: 9999;
+      max-width: 96vw;
+      border: 1px solid #e2e8f0;
     }
 
     button, label.btn-label {
@@ -32,56 +41,62 @@
       color: white;
       border: none;
       padding: 6px 12px;
-      border-radius: 16px;
+      border-radius: 20px;
       font-size: 13px;
-      font-weight: bold;
+      font-weight: 600;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
+      white-space: nowrap;
     }
 
-    button.active { background: #0369a1; outline: 2px solid #38bdf8; }
-    button.danger { background: #ef4444; }
+    button.active {
+      background: #0f172a;
+    }
+
+    button.danger {
+      background: #ef4444;
+    }
 
     input[type="color"] {
       border: none;
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 26px;
       border-radius: 50%;
       cursor: pointer;
       background: none;
+      padding: 0;
     }
 
     #canvas {
       position: absolute;
       top: 0;
       left: 0;
-      width: 100%;
-      height: 100%;
+      width: 100vw;
+      height: 100vh;
       touch-action: none;
+      display: block;
     }
 
     .status {
       font-size: 11px;
       color: #16a34a;
       font-weight: bold;
+      white-space: nowrap;
     }
   </style>
 </head>
 <body>
 
   <div id="toolbar">
-    <span class="status" id="statusText">● Bağlandı</span>
+    <span class="status">● Bağlandı</span>
     <input type="color" id="colorPicker" value="#0284c7">
-    
     <button id="btnPen" class="active">✏️ Kalem</button>
     <button id="btnText">💬 Metin</button>
-    
     <label class="btn-label">
       📷 Resim
       <input type="file" id="imageInput" accept="image/*" style="display: none;">
     </label>
-
     <button id="btnClear" class="danger">Temizle</button>
   </div>
 
@@ -104,39 +119,41 @@
     let isDrawing = false;
     let lastX = 0, lastY = 0;
 
-    function resizeCanvas() {
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    function initCanvasSize() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      ctx.putImageData(imgData, 0, 0);
     }
-    window.addEventListener('resize', resizeCanvas);
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    initCanvasSize();
 
-    btnPen.addEventListener('click', () => {
+    btnPen.addEventListener('click', (e) => {
+      e.stopPropagation();
       currentMode = 'pen';
       btnPen.classList.add('active');
       btnText.classList.remove('active');
     });
 
-    btnText.addEventListener('click', () => {
+    btnText.addEventListener('click', (e) => {
+      e.stopPropagation();
       currentMode = 'text';
       btnText.classList.add('active');
       btnPen.classList.remove('active');
     });
 
-    function getPos(e) {
-      if (e.touches && e.touches.length > 0) {
-        return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      }
-      return { x: e.clientX, y: e.clientY };
+    function getCoordinates(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
     }
 
     function cizgiCiz(x1, y1, x2, y2, renk, kaydet = false) {
       ctx.strokeStyle = renk;
       ctx.lineWidth = 4;
       ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
@@ -152,7 +169,7 @@
 
     function metinYaz(x, y, metin, renk, kaydet = false) {
       ctx.fillStyle = renk;
-      ctx.font = "bold 20px sans-serif";
+      ctx.font = "bold 22px system-ui, sans-serif";
       ctx.fillText(metin, x, y);
 
       if (kaydet) {
@@ -166,8 +183,9 @@
     function resimCiz(x, y, base64, kaydet = false) {
       const img = new Image();
       img.onload = () => {
-        const oran = Math.min(300 / img.width, 1);
-        ctx.drawImage(img, x, y, img.width * oran, img.height * oran);
+        const maxWidth = 300;
+        const scale = img.width > maxWidth ? (maxWidth / img.width) : 1;
+        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
       };
       img.src = base64;
 
@@ -179,60 +197,92 @@
       }
     }
 
-    function basla(e) {
-      const pos = getPos(e);
+    function startDraw(e) {
+      if (e.target !== canvas) return;
+      if (e.cancelable) e.preventDefault();
+      
+      const pos = getCoordinates(e);
       if (currentMode === 'pen') {
         isDrawing = true;
         lastX = pos.x;
         lastY = pos.y;
       } else if (currentMode === 'text') {
-        const yazi = prompt("Eklemek istediğiniz metni yazın:");
-        if (yazi) {
-          metinYaz(pos.x, pos.y, yazi, colorPicker.value, true);
-        }
+        setTimeout(() => {
+          const yazi = prompt("Yazmak istediğiniz notu girin:");
+          if (yazi && yazi.trim() !== "") {
+            metinYaz(pos.x, pos.y, yazi.trim(), colorPicker.value, true);
+          }
+        }, 50);
       }
     }
 
-    function hareket(e) {
+    function moveDraw(e) {
       if (!isDrawing || currentMode !== 'pen') return;
-      const pos = getPos(e);
+      if (e.cancelable) e.preventDefault();
+
+      const pos = getCoordinates(e);
       cizgiCiz(lastX, lastY, pos.x, pos.y, colorPicker.value, true);
       lastX = pos.x;
       lastY = pos.y;
     }
 
-    function bitir() {
-      isDrawing = false;
+    function endDraw(e) {
+      if (isDrawing) {
+        isDrawing = false;
+      }
     }
 
-    canvas.addEventListener('mousedown', basla);
-    canvas.addEventListener('mousemove', hareket);
-    window.addEventListener('mouseup', bitir);
+    // Dokunmatik ve Fare Olayları
+    canvas.addEventListener('touchstart', startDraw, { passive: false });
+    canvas.addEventListener('touchmove', moveDraw, { passive: false });
+    canvas.addEventListener('touchend', endDraw, { passive: false });
+    canvas.addEventListener('touchcancel', endDraw, { passive: false });
 
-    canvas.addEventListener('touchstart', basla, { passive: false });
-    canvas.addEventListener('touchmove', hareket, { passive: false });
-    window.addEventListener('touchend', bitir);
+    canvas.addEventListener('mousedown', startDraw);
+    window.addEventListener('mousemove', moveDraw);
+    window.addEventListener('mouseup', endDraw);
 
+    // Resim Yükleme (Küçülterek veri tasarrufu sağlar)
     imageInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
 
       const reader = new FileReader();
       reader.onload = (event) => {
-        resimCiz(50, 100, event.target.result, true);
+        const tempImg = new Image();
+        tempImg.onload = () => {
+          const canvasTemp = document.createElement('canvas');
+          const maxDim = 800;
+          let w = tempImg.width;
+          let h = tempImg.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = (h * maxDim) / w; w = maxDim; }
+            else { w = (w * maxDim) / h; h = maxDim; }
+          }
+          canvasTemp.width = w;
+          canvasTemp.height = h;
+          const tempCtx = canvasTemp.getContext('2d');
+          tempCtx.drawImage(tempImg, 0, 0, w, h);
+          const compressedBase64 = canvasTemp.toDataURL('image/jpeg', 0.7);
+          resimCiz(60, 120, compressedBase64, true);
+        };
+        tempImg.src = event.target.result;
       };
       reader.readAsDataURL(file);
       e.target.value = '';
     });
 
-    btnClear.addEventListener('click', async () => {
-      if (confirm("Tüm panoyu temizlemek istediğinize emin misiniz?")) {
+    // Temizleme
+    btnClear.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (confirm("Pano tamamen temizlensin mi?")) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         await supabase.from('pano_elemanlari').delete().neq('id', 0);
       }
     });
 
-    async function gecmisiYukle() {
+    // Geçmişi Getir
+    async function yukle() {
       const { data } = await supabase
         .from('pano_elemanlari')
         .select('*')
@@ -250,8 +300,9 @@
         });
       }
     }
-    gecmisiYukle();
+    yukle();
 
+    // Canlı Eşitleme
     supabase
       .channel('pano-canli')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pano_elemanlari' }, payload => {
