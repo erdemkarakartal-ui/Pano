@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Ortak Çizim Panosu</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <title>Canlı Çizim Panosu</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
@@ -20,30 +20,31 @@
 
     #toolbar {
       position: fixed;
-      top: 15px;
+      top: 10px;
       left: 50%;
       transform: translateX(-50%);
       background: rgba(255, 255, 255, 0.95);
-      padding: 8px 16px;
+      padding: 6px 14px;
       border-radius: 30px;
       box-shadow: 0 4px 15px rgba(0,0,0,0.15);
       display: flex;
-      gap: 12px;
+      gap: 10px;
       align-items: center;
       z-index: 1000;
-      border: 1px solid #ddd;
+      border: 1px solid #e2e8f0;
+      white-space: nowrap;
     }
 
     .status {
-      font-size: 13px;
+      font-size: 12px;
       color: #16a34a;
       font-weight: bold;
     }
 
     input[type="color"] {
       border: none;
-      width: 32px;
-      height: 32px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
       cursor: pointer;
       background: none;
@@ -53,9 +54,9 @@
       background: #ef4444;
       color: white;
       border: none;
-      padding: 8px 14px;
+      padding: 6px 12px;
       border-radius: 20px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: bold;
       cursor: pointer;
     }
@@ -68,14 +69,13 @@
       height: 100vh;
       touch-action: none;
       display: block;
-      cursor: crosshair;
     }
   </style>
 </head>
 <body>
 
   <div id="toolbar">
-    <span class="status">● Canlı</span>
+    <span class="status" id="statusText">● Hazır</span>
     <input type="color" id="colorPicker" value="#0284c7">
     <button id="btnClear">Temizle</button>
   </div>
@@ -83,35 +83,38 @@
   <canvas id="canvas"></canvas>
 
   <script>
-    const SUPABASE_URL = "https://bzbyfxwzreaxlxxruvcx.supabase.co";
-    const SUPABASE_KEY = "Sb_publishable_Uv-o3WVpsV8gI0PgXaq88w_JuaD6pO5";
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const colorPicker = document.getElementById('colorPicker');
     const btnClear = document.getElementById('btnClear');
+    const statusText = document.getElementById('statusText');
 
     let isDrawing = false;
     let lastX = 0, lastY = 0;
 
+    // Tuval boyutunu ayarla
     function resize() {
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      gecmisiGetir();
+      ctx.putImageData(img, 0, 0);
     }
     window.addEventListener('resize', resize);
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
+    // Dokunma koordinatları
     function getCoords(e) {
-      if (e.touches && e.touches.length > 0) {
-        return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      }
-      return { x: e.clientX, y: e.clientY };
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
     }
 
-    function ciz(x1, y1, x2, y2, renk, gonder = false) {
+    function ciz(x1, y1, x2, y2, renk, emit = true) {
       ctx.strokeStyle = renk;
       ctx.lineWidth = 4;
       ctx.lineCap = 'round';
@@ -121,15 +124,13 @@
       ctx.lineTo(x2, y2);
       ctx.stroke();
 
-      if (gonder) {
-        supabase.from('pano_elemanlari').insert([{
-          tur: 'cizim',
-          veri: { x1, y1, x2, y2, renk }
-        }]).then();
+      if (emit && conn && conn.open) {
+        conn.send({ type: 'draw', x1, y1, x2, y2, renk });
       }
     }
 
-    function baslat(e) {
+    // Çizim Dinleyicileri (Mobilde kesin çalışır)
+    function start(e) {
       if (e.target !== canvas) return;
       if (e.cancelable) e.preventDefault();
       isDrawing = true;
@@ -138,7 +139,7 @@
       lastY = p.y;
     }
 
-    function cizimYap(e) {
+    function move(e) {
       if (!isDrawing) return;
       if (e.cancelable) e.preventDefault();
       const p = getCoords(e);
@@ -147,59 +148,60 @@
       lastY = p.y;
     }
 
-    function durdur() {
+    function end() {
       isDrawing = false;
     }
 
-    // Dokunmatik
-    canvas.addEventListener('touchstart', baslat, { passive: false });
-    canvas.addEventListener('touchmove', cizimYap, { passive: false });
-    window.addEventListener('touchend', durdur);
-    window.addEventListener('touchcancel', durdur);
+    canvas.addEventListener('touchstart', start, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
+    canvas.addEventListener('touchend', end);
+    canvas.addEventListener('touchcancel', end);
 
-    // Fare
-    canvas.addEventListener('mousedown', baslat);
-    window.addEventListener('mousemove', cizimYap);
-    window.addEventListener('mouseup', durdur);
+    canvas.addEventListener('mousedown', start);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
 
-    // Temizle
-    btnClear.addEventListener('click', async () => {
-      if (confirm("Pano temizlensin mi?")) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        await supabase.from('pano_elemanlari').delete().neq('id', 0);
+    btnClear.addEventListener('click', () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (conn && conn.open) {
+        conn.send({ type: 'clear' });
       }
     });
 
-    // Geçmişi Getir (Sonradan girildiğinde çizimleri korur)
-    async function gecmisiGetir() {
-      const { data } = await supabase
-        .from('pano_elemanlari')
-        .select('*')
-        .order('id', { ascending: true });
+    // Otomatik Bağlantı (Eşinizle aynı sabit odada buluşur)
+    const ODA = "ortak-pano-erdem";
+    const peer = new Peer();
+    let conn = null;
 
-      if (data) {
-        data.forEach(item => {
-          if (item.tur === 'cizim' && item.veri) {
-            ciz(item.veri.x1, item.veri.y1, item.veri.x2, item.veri.y2, item.veri.renk, false);
-          }
-        });
-      }
-    }
-    gecmisiGetir();
+    peer.on('open', (id) => {
+      statusText.innerText = "● Bağlantı Bekleniyor...";
+      
+      // Karşı tarafı aramayı dene
+      conn = peer.connect(ODA);
+      baglantiAyarla(conn);
+    });
 
-    // Canlı Eşitleme
-    supabase
-      .channel('pano-canli')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pano_elemanlari' }, payload => {
-        const item = payload.new;
-        if (item && item.tur === 'cizim' && item.veri) {
-          ciz(item.veri.x1, item.veri.y1, item.veri.x2, item.veri.y2, item.veri.renk, false);
+    // Ana istasyon olmaya çalış
+    const masterPeer = new Peer(ODA);
+    masterPeer.on('connection', (c) => {
+      conn = c;
+      baglantiAyarla(conn);
+    });
+
+    function baglantiAyarla(c) {
+      c.on('open', () => {
+        statusText.innerText = "● Canlı Bağlandı!";
+        statusText.style.color = "#16a34a";
+      });
+
+      c.on('data', (data) => {
+        if (data.type === 'draw') {
+          ciz(data.x1, data.y1, data.x2, data.y2, data.renk, false);
+        } else if (data.type === 'clear') {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pano_elemanlari' }, () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      })
-      .subscribe();
+      });
+    }
   </script>
 </body>
 </html>
