@@ -4,220 +4,270 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Ortak Çizim & Pano</title>
-
-  <meta name="theme-color" content="#1e293b">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Panomuz">
-  <link rel="manifest" href='data:application/manifest+json,{"name":"Ortak Panomuz","short_name":"Panomuz","start_url":".","display":"standalone","background_color":"#f8fafc","theme_color":"#1e293b"}'>
-
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f8fafc;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      touch-action: none;
-    }
-    .ust-bar {
-      background: #1e293b;
-      color: white;
-      padding: 12px 15px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-      z-index: 10;
-    }
-    .araclar {
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #f8fafc; font-family: sans-serif; }
+    
+    #toolbar {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 8px 14px;
+      border-radius: 30px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.15);
       display: flex;
       gap: 10px;
       align-items: center;
+      z-index: 100;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 95vw;
     }
+
+    button, label.btn-label {
+      background: #0284c7;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    button.active { background: #0369a1; outline: 2px solid #38bdf8; }
+    button.danger { background: #ef4444; }
+
     input[type="color"] {
       border: none;
-      width: 34px;
-      height: 34px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
       cursor: pointer;
       background: none;
     }
-    select {
-      padding: 6px 10px;
-      border-radius: 8px;
-      border: none;
-      font-size: 14px;
-      background: #334155;
-      color: white;
-    }
-    button {
-      background: #ef4444;
-      color: white;
-      border: none;
-      padding: 8px 14px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    button:active { transform: scale(0.96); }
-    #tahta {
-      flex: 1;
-      background: #ffffff;
-      cursor: crosshair;
+
+    #canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       touch-action: none;
     }
-    .durum {
-      font-size: 12px;
-      color: #facc15;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      margin-top: 2px;
+
+    .status {
+      font-size: 11px;
+      color: #16a34a;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
 
-  <div class="ust-bar">
-    <div>
-      <div style="font-weight: bold; font-size: 16px;">Ortak Panomuz 🎨</div>
-      <div class="durum" id="baglantiDurumu">● Bağlanıyor...</div>
-    </div>
-    <div class="araclar">
-      <input type="color" id="renkSecici" value="#2563eb">
-      <select id="kalinlikSecici">
-        <option value="3">İnce</option>
-        <option value="6" selected>Orta</option>
-        <option value="14">Kalın</option>
-      </select>
-      <button onclick="ekraniTemizle(true)">Temizle</button>
-    </div>
+  <div id="toolbar">
+    <span class="status" id="statusText">● Bağlandı</span>
+    <input type="color" id="colorPicker" value="#0284c7">
+    
+    <button id="btnPen" class="active">✏️ Kalem</button>
+    <button id="btnText">💬 Metin</button>
+    
+    <label class="btn-label">
+      📷 Resim
+      <input type="file" id="imageInput" accept="image/*" style="display: none;">
+    </label>
+
+    <button id="btnClear" class="danger">Temizle</button>
   </div>
 
-  <canvas id="tahta"></canvas>
+  <canvas id="canvas"></canvas>
 
   <script>
-    const SUPABASE_URL = 'https://ijznxmcoezckgnannjgk.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_wphEgK7mxVLcVHtfG956qg_ofN4Nf1G';
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const SUPABASE_URL = "https://bzbyfxwzreaxlxxruvcx.supabase.co";
+    const SUPABASE_KEY = "Sb_publishable_Uv-o3WVpsV8gI0PgXaq88w_JuaD6pO5";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const canvas = document.getElementById('tahta');
+    const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const renkSecici = document.getElementById('renkSecici');
-    const kalinlikSecici = document.getElementById('kalinlikSecici');
-    const durumText = document.getElementById('baglantiDurumu');
+    const colorPicker = document.getElementById('colorPicker');
+    const btnPen = document.getElementById('btnPen');
+    const btnText = document.getElementById('btnText');
+    const imageInput = document.getElementById('imageInput');
+    const btnClear = document.getElementById('btnClear');
 
-    let ciziyorMu = false;
-    let oncekiX = 0;
-    let oncekiY = 0;
+    let currentMode = 'pen';
+    let isDrawing = false;
+    let lastX = 0, lastY = 0;
 
-    function boyutlandir() {
+    function resizeCanvas() {
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight - document.querySelector('.ust-bar').offsetHeight;
+      canvas.height = window.innerHeight;
+      ctx.putImageData(imgData, 0, 0);
     }
-    window.addEventListener('resize', boyutlandir);
-    boyutlandir();
+    window.addEventListener('resize', resizeCanvas);
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-    const kanal = supabaseClient.channel('cizim-odasi', {
-      config: { broadcast: { self: false } }
+    btnPen.addEventListener('click', () => {
+      currentMode = 'pen';
+      btnPen.classList.add('active');
+      btnText.classList.remove('active');
     });
 
-    kanal
-      .on('broadcast', { event: 'cizgi' }, ({ payload }) => {
-        const x0 = payload.x0 * canvas.width;
-        const y0 = payload.y0 * canvas.height;
-        const x1 = payload.x1 * canvas.width;
-        const y1 = payload.y1 * canvas.height;
-        cizgiCiz(x0, y0, x1, y1, payload.renk, payload.kalinlik, false);
-      })
-      .on('broadcast', { event: 'temizle' }, () => {
-        ekraniTemizle(false);
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          durumText.innerText = '● Canlı Bağlantı Aktif';
-          durumText.style.color = '#4ade80';
-        }
-      });
+    btnText.addEventListener('click', () => {
+      currentMode = 'text';
+      btnText.classList.add('active');
+      btnPen.classList.remove('active');
+    });
 
-    function cizgiCiz(x0, y0, x1, y1, renk, kalinlik, yayinla) {
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
+    function getPos(e) {
+      if (e.touches && e.touches.length > 0) {
+        return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }
+      return { x: e.clientX, y: e.clientY };
+    }
+
+    function cizgiCiz(x1, y1, x2, y2, renk, kaydet = false) {
       ctx.strokeStyle = renk;
-      ctx.lineWidth = kalinlik;
+      ctx.lineWidth = 4;
       ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
       ctx.stroke();
-      ctx.closePath();
 
-      if (yayinla) {
-        kanal.send({
-          type: 'broadcast',
-          event: 'cizgi',
-          payload: {
-            x0: x0 / canvas.width,
-            y0: y0 / canvas.height,
-            x1: x1 / canvas.width,
-            y1: y1 / canvas.height,
-            renk: renk,
-            kalinlik: kalinlik
+      if (kaydet) {
+        supabase.from('pano_elemanlari').insert([{
+          tur: 'cizim',
+          veri: { x1, y1, x2, y2, renk }
+        }]).then();
+      }
+    }
+
+    function metinYaz(x, y, metin, renk, kaydet = false) {
+      ctx.fillStyle = renk;
+      ctx.font = "bold 20px sans-serif";
+      ctx.fillText(metin, x, y);
+
+      if (kaydet) {
+        supabase.from('pano_elemanlari').insert([{
+          tur: 'metin',
+          veri: { x, y, metin, renk }
+        }]).then();
+      }
+    }
+
+    function resimCiz(x, y, base64, kaydet = false) {
+      const img = new Image();
+      img.onload = () => {
+        const oran = Math.min(300 / img.width, 1);
+        ctx.drawImage(img, x, y, img.width * oran, img.height * oran);
+      };
+      img.src = base64;
+
+      if (kaydet) {
+        supabase.from('pano_elemanlari').insert([{
+          tur: 'resim',
+          veri: { x, y, base64 }
+        }]).then();
+      }
+    }
+
+    function basla(e) {
+      const pos = getPos(e);
+      if (currentMode === 'pen') {
+        isDrawing = true;
+        lastX = pos.x;
+        lastY = pos.y;
+      } else if (currentMode === 'text') {
+        const yazi = prompt("Eklemek istediğiniz metni yazın:");
+        if (yazi) {
+          metinYaz(pos.x, pos.y, yazi, colorPicker.value, true);
+        }
+      }
+    }
+
+    function hareket(e) {
+      if (!isDrawing || currentMode !== 'pen') return;
+      const pos = getPos(e);
+      cizgiCiz(lastX, lastY, pos.x, pos.y, colorPicker.value, true);
+      lastX = pos.x;
+      lastY = pos.y;
+    }
+
+    function bitir() {
+      isDrawing = false;
+    }
+
+    canvas.addEventListener('mousedown', basla);
+    canvas.addEventListener('mousemove', hareket);
+    window.addEventListener('mouseup', bitir);
+
+    canvas.addEventListener('touchstart', basla, { passive: false });
+    canvas.addEventListener('touchmove', hareket, { passive: false });
+    window.addEventListener('touchend', bitir);
+
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        resimCiz(50, 100, event.target.result, true);
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    });
+
+    btnClear.addEventListener('click', async () => {
+      if (confirm("Tüm panoyu temizlemek istediğinize emin misiniz?")) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        await supabase.from('pano_elemanlari').delete().neq('id', 0);
+      }
+    });
+
+    async function gecmisiYukle() {
+      const { data } = await supabase
+        .from('pano_elemanlari')
+        .select('*')
+        .order('id', { ascending: true });
+
+      if (data) {
+        data.forEach(item => {
+          if (item.tur === 'cizim') {
+            cizgiCiz(item.veri.x1, item.veri.y1, item.veri.x2, item.veri.y2, item.veri.renk, false);
+          } else if (item.tur === 'metin') {
+            metinYaz(item.veri.x, item.veri.y, item.veri.metin, item.veri.renk, false);
+          } else if (item.tur === 'resim') {
+            resimCiz(item.veri.x, item.veri.y, item.veri.base64, false);
           }
         });
       }
     }
+    gecmisiYukle();
 
-    function pozisyonAl(e) {
-      const rect = canvas.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      return {
-        x: clientX - rect.left,
-        y: clientY - rect.top
-      };
-    }
-
-    function basla(e) {
-      e.preventDefault();
-      ciziyorMu = true;
-      const pos = pozisyonAl(e);
-      oncekiX = pos.x;
-      oncekiY = pos.y;
-    }
-
-    function hareket(e) {
-      if (!ciziyorMu) return;
-      e.preventDefault();
-      const pos = pozisyonAl(e);
-      cizgiCiz(oncekiX, oncekiY, pos.x, pos.y, renkSecici.value, kalinlikSecici.value, true);
-      oncekiX = pos.x;
-      oncekiY = pos.y;
-    }
-
-    function bitir() {
-      ciziyorMu = false;
-    }
-
-    canvas.addEventListener('touchstart', basla, { passive: false });
-    canvas.addEventListener('touchmove', hareket, { passive: false });
-    canvas.addEventListener('touchend', bitir);
-
-    canvas.addEventListener('mousedown', basla);
-    canvas.addEventListener('mousemove', hareket);
-    canvas.addEventListener('mouseup', bitir);
-
-    function ekraniTemizle(yayinla) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (yayinla) {
-        kanal.send({ type: 'broadcast', event: 'temizle' });
-      }
-    }
+    supabase
+      .channel('pano-canli')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pano_elemanlari' }, payload => {
+        const item = payload.new;
+        if (item.tur === 'cizim') {
+          cizgiCiz(item.veri.x1, item.veri.y1, item.veri.x2, item.veri.y2, item.veri.renk, false);
+        } else if (item.tur === 'metin') {
+          metinYaz(item.veri.x, item.veri.y, item.veri.metin, item.veri.renk, false);
+        } else if (item.tur === 'resim') {
+          resimCiz(item.veri.x, item.veri.y, item.veri.base64, false);
+        }
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pano_elemanlari' }, () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      })
+      .subscribe();
   </script>
 </body>
 </html>
